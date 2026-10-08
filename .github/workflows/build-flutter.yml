@@ -172,6 +172,20 @@ jobs:
         with:
           path: artifacts
 
+      - name: Checksums for the in-app updater
+        shell: bash
+        run: |
+          # Uygulama icindeki guncelleyici indirdigi dosyayi calistirmadan
+          # once bu listeyle karsilastirir; dosya adlari release'deki adlarla
+          # birebir ayni olmali, o yuzden her birinin bulundugu klasorde
+          # hesaplaniyor.
+          : > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          for f in artifacts/windows-flutter/* artifacts/macos-flutter/*; do
+            [ -f "$f" ] || continue
+            ( cd "$(dirname "$f")" && sha256sum "$(basename "$f")" ) >> "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          done
+          cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+
       - name: Publish release
         shell: bash
         run: |
@@ -231,11 +245,11 @@ jobs:
           [\`master\` branch](../../tree/master).
           EOF
           )
-          gh release create "$TAG" artifacts/windows-flutter/*.zip artifacts/windows-flutter/*Setup.exe artifacts/macos-flutter/*.zip \
+          gh release create "$TAG" artifacts/windows-flutter/*.zip artifacts/windows-flutter/*Setup.exe artifacts/macos-flutter/*.zip SHA256SUMS.txt \
             --title "Network Console $TAG" \
             --notes "$NOTES" \
           || {
-            gh release upload "$TAG" artifacts/windows-flutter/*.zip artifacts/windows-flutter/*Setup.exe artifacts/macos-flutter/*.zip --clobber
+            gh release upload "$TAG" artifacts/windows-flutter/*.zip artifacts/windows-flutter/*Setup.exe artifacts/macos-flutter/*.zip SHA256SUMS.txt --clobber
             gh release edit "$TAG" --title "Network Console $TAG" --notes "$NOTES"
           }
 

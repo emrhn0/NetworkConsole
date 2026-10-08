@@ -48,9 +48,35 @@ const Map<String, List<String>> _strings = {
   'action.refresh': ['Refresh', 'Yenile'],
   'action.cancel': ['Cancel', 'Vazgeç'],
   'action.update': ['Update', 'Güncelle'],
+  'action.updateNow': ['Update now', 'Şimdi güncelle'],
+  'action.remindLater': ['Remind me later', 'Daha sonra hatırlat'],
+  'action.skipVersion': ['Skip this version', 'Bu sürümü atla'],
+  'action.openDownloadPage': ['Open download page', 'İndirme sayfasını aç'],
+  'action.checkUpdates': ['Check for updates', 'Güncellemeleri denetle'],
 
   'update.title': ['Update available', 'Güncelleme mevcut'],
   'update.downloading': ['Downloading update…', 'Güncelleme indiriliyor…'],
+  'update.running': ['You are running v{0}.', 'Şu an v{0} kullanıyorsunuz.'],
+  'update.size': ['Download is {0}.', 'İndirme boyutu {0}.'],
+  'update.manualNote': [
+    'Downloading opens the release page in your browser. Unzip the app and drag it to Applications, replacing the old one.',
+    'İndirme, sürüm sayfasını tarayıcınızda açar. Uygulamayı arşivden çıkarıp Applications klasörüne sürükleyin ve eskisinin üzerine yazın.'],
+  'update.errorHint': [
+    'You can still download it yourself from the release page.',
+    'Dilerseniz sürüm sayfasından kendiniz indirebilirsiniz.'],
+  'update.checking': ['Checking for updates…', 'Güncellemeler denetleniyor…'],
+  'update.upToDate': ['You are on the latest version (v{0}).', 'En güncel sürümü kullanıyorsunuz (v{0}).'],
+  'update.failed': [
+    'Could not reach GitHub to check for updates. Check your internet connection and try again.',
+    "Güncelleme denetimi için GitHub'a ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin."],
+  'update.found': ['Version {0} is available.', '{0} sürümü yayınlandı.'],
+  'update.askInstall': ['Update to {0} now?', '{0} sürümüne şimdi güncellensin mi?'],
+  'update.installed': ['The update will restart the app when it finishes.',
+    'Güncelleme tamamlanınca uygulama yeniden başlatılacak.'],
+  'settings.updates': ['Updates', 'Güncellemeler'],
+  'settings.updatesNote': [
+    'Network Console checks GitHub for a newer release each time it starts and offers to install it. You can also check here at any time.',
+    'Network Console her açılışta GitHub üzerinde yeni sürüm olup olmadığına bakar ve varsa kurmayı önerir. Buradan istediğiniz zaman da denetleyebilirsiniz.'],
 
   'settings.vtTitle': ['VirusTotal API Key', 'VirusTotal API Anahtarı'],
   'settings.vtPlaceholder': ['Your own VirusTotal API key', 'Kendi VirusTotal API anahtarınız'],
@@ -118,6 +144,16 @@ const Map<String, List<String>> _strings = {
   'dashboard.empty': ['No activity yet', 'Henüz etkinlik yok'],
   'dashboard.emptySub': ['Use any tool and it will show up here', 'Bir araç kullanınca burada görünür'],
 };
+
+/// [t], with `{0}`, `{1}`, ... replaced by [args] -- for the few strings that
+/// carry a version number or a file size.
+String tf(String lang, String key, List<String> args) {
+  var out = t(lang, key);
+  for (var i = 0; i < args.length; i++) {
+    out = out.replaceAll('{$i}', args[i]);
+  }
+  return out;
+}
 
 String t(String lang, String key) {
   final e = _strings[key];

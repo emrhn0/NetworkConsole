@@ -22,9 +22,14 @@ class AppState extends ChangeNotifier {
   final List<HistoryEntry> history = [];
   DateTime sessionStart = DateTime.now();
 
-  // Guncelleme kontrolu (GitHub Releases). Kalici "bu surumu atla" bayragi
-  // YOK - her acilista tekrar sorulur (kullanici bunu ozellikle istedi).
+  // Guncelleme kontrolu (GitHub Releases). Her acilista tekrar calisir;
+  // kullanici "bu surumu atla" derse SADECE o surum icin acilista sorulmaz,
+  // Ayarlar'daki "Güncellemeleri denetle" yine her zaman gosterir.
   UpdateInfo? updateAvailable;
+
+  /// Acilistaki diyalogun atlanmasi gerekip gerekmedigi - "bu surumu atla"
+  /// secilmis surum icin true.
+  bool updateSkipped = false;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
@@ -43,8 +48,10 @@ class AppState extends ChangeNotifier {
 
     // Acilisi bloklamadan arka planda kontrol et - internet yoksa/GitHub
     // erisilemezse checkForUpdate zaten sessizce null doner.
-    UpdateChecker.checkForUpdate(kAppVersion).then((info) {
+    UpdateChecker.checkForUpdate(kAppVersion).then((info) async {
       if (info == null) return;
+      UpdateChecker.available.value = info;
+      updateSkipped = await UpdateChecker.isSkipped(info.version);
       updateAvailable = info;
       notifyListeners();
     });
@@ -74,8 +81,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Acilis diyalogu kapatildi. updateAvailable KORUNUR - Ayarlar sayfasi ve
+  /// sonraki "denetle" cagrilari ayni surumu gostermeye devam etsin diye;
+  /// sadece bu oturumda diyalog bir daha acilmaz (bkz. AppShell).
   void dismissUpdate() {
-    updateAvailable = null;
     notifyListeners();
   }
 

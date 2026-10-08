@@ -5,9 +5,11 @@ import '../core/app_state.dart';
 import '../core/constants.dart';
 import '../core/errors.dart';
 import '../core/i18n.dart';
+import '../core/update_checker.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
+import '../widgets/update_dialog.dart';
 import 'urlcheck_screen.dart' show kVtApiKeyUrl;
 
 class SettingsScreen extends StatefulWidget {
@@ -135,6 +137,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
         ),
         const SizedBox(height: 14),
+        const _UpdatesPanel(),
+        const SizedBox(height: 14),
         SectionCard(
           c: c,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -170,4 +174,156 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Text(label, style: TextStyle(color: active ? c.accent : c.inkFaint, fontWeight: FontWeight.w600, fontSize: 12.5)),
         ),
       );
+}
+
+
+/// "Güncellemeleri denetle" - sorusu sayfanin kendisinde cevaplanir, ayri bir
+/// pencere acmadan: ne bulundugu, indirme ilerlemesi ve hata varsa sebebi
+/// ayni kartta gorunur. Acilistaki diyalogla ayni kurulum yolunu kullanir.
+class _UpdatesPanel extends StatefulWidget {
+  const _UpdatesPanel();
+  @override
+  State<_UpdatesPanel> createState() => _UpdatesPanelState();
+}
+
+class _UpdatesPanelState extends State<_UpdatesPanel> {
+  bool _checking = false;
+  bool _installing = false;
+  double? _progress;
+  UpdateInfo? _info;
+  String? _message;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Acilistaki kontrol zaten bir sonuc bulduysa tekrar sormaya gerek yok.
+    _info = UpdateChecker.available.value;
+  }
+
+  Future<void> _check() async {
+    setState(() {
+      _checking = true;
+      _message = null;
+      _error = null;
+    });
+    final lang = context.read<AppState>().lang;
+    final result = await UpdateChecker.checkNow(kAppVersion);
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      if (result.failed) {
+        _error = t(lang, 'update.failed');
+      } else if (result.info == null) {
+        _info = null;
+        _message = tf(lang, 'update.upToDate', [kAppVersion]);
+      } else {
+        _info = result.info;
+        UpdateChecker.available.value = result.info;
+      }
+    });
+  }
+
+  Future<void> _install() async {
+    final info = _info;
+    if (info == null) return;
+    setState(() {
+      _installing = true;
+      _progress = 0;
+      _error = null;
+    });
+    final error = await installUpdate(info, onProgress: (p) {
+      if (mounted) setState(() => _progress = p);
+    });
+    if (!mounted) return;
+    setState(() {
+      _installing = false;
+      _error = error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final c = AppTheme(state.isDark).c;
+    final lang = state.lang;
+    final info = _info;
+
+    return SectionCard(
+      c: c,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Caption(t(lang, 'settings.updates'), c),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: Text('v$kAppVersion', style: TextStyle(color: c.inkSoft, fontSize: 12.5)),
+          ),
+          GhostButton(
+            label: t(lang, 'action.checkUpdates'),
+            c: c,
+            icon: Icon(Icons.system_update_alt, size: 13, color: c.inkFaint),
+            onPressed: (_checking || _installing) ? null : _check,
+          ),
+        ]),
+        if (_checking) ...[
+          const SizedBox(height: 12),
+          StatusLine(kind: StatusKind.busy, text: t(lang, 'update.checking'), c: c),
+        ],
+        if (_message != null) ...[
+          const SizedBox(height: 12),
+          StatusLine(kind: StatusKind.ok, text: _message!, c: c),
+        ],
+        if (info != null && !_installing) ...[
+          const SizedBox(height: 12),
+          Text(tf(lang, 'update.found', ['v${info.version}']),
+              style: TextStyle(color: c.ink, fontSize: 13, fontWeight: FontWeight.w600)),
+          if (info.sizeLabel.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(tf(lang, 'update.size', [info.sizeLabel]),
+                style: TextStyle(color: c.inkFaint, fontSize: 11.5)),
+          ],
+          const SizedBox(height: 12),
+          Row(children: [
+            if (info.canSelfInstall && _error == null)
+              GhostButton(
+                label: t(lang, 'action.updateNow'),
+                c: c,
+                icon: Icon(Icons.system_update_alt, size: 13, color: c.accent),
+                onPressed: _install,
+              )
+            else
+              GhostButton(
+                label: t(lang, 'action.openDownloadPage'),
+                c: c,
+                onPressed: () => UpdateChecker.openReleasePage(info),
+              ),
+          ]),
+        ],
+        if (_installing) ...[
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+                value: _progress, backgroundColor: c.fillHover, color: c.accent, minHeight: 6),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _progress == null
+                ? t(lang, 'update.downloading')
+                : '${t(lang, 'update.downloading')} ${(_progress! * 100).toStringAsFixed(0)}%',
+            style: TextStyle(color: c.inkFaint, fontSize: 11.5),
+          ),
+          const SizedBox(height: 4),
+          Text(t(lang, 'update.installed'), style: TextStyle(color: c.inkGhost, fontSize: 11)),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          StatusLine(kind: StatusKind.error, text: _error!, c: c),
+        ],
+        const SizedBox(height: 10),
+        Text(t(lang, 'settings.updatesNote'),
+            style: TextStyle(color: c.inkGhost, fontSize: 11, height: 1.5)),
+      ]),
+    );
+  }
 }

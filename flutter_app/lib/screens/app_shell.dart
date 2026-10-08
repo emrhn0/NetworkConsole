@@ -1,13 +1,11 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../core/app_state.dart';
 import '../core/constants.dart';
 import '../core/i18n.dart';
 import '../core/nav.dart';
-import '../core/update_checker.dart';
+import '../widgets/update_dialog.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_colors.dart';
 import '../widgets/title_bar.dart';
@@ -42,77 +40,18 @@ class _AppShellState extends State<AppShell> {
 
   void _go(String v) => setState(() => _view = v);
 
-  /// Yeni surum bulunursa (AppState.updateAvailable) bir kez, o acilista
-  /// diyalog gosterir. Kalici "bu surumu atla" bayragi yok - Cancel'a
-  /// basilirsa sadece o oturumda tekrar cikmaz, bir dahaki acilista
-  /// updateAvailable yeniden set edilip sorulur.
+  /// Acilista yeni surum bulunursa bir kez diyalog gosterir. "Bu surumu
+  /// atla" secilmis surum icin hic cikmaz - o durumda guncelleme yalnizca
+  /// Ayarlar > Güncellemeler altindan sunulur.
   void _maybeShowUpdateDialog(AppState state) {
-    if (_updateDialogShown || state.updateAvailable == null) return;
+    if (_updateDialogShown || state.updateAvailable == null || state.updateSkipped) return;
     _updateDialogShown = true;
     final info = state.updateAvailable!;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      bool downloading = false;
-      double progress = 0;
-      showDialog(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setSt) {
-            final theme = AppTheme(state.isDark);
-            final c = theme.c;
-            return AlertDialog(
-              backgroundColor: c.bgRise,
-              title: Text(t(state.lang, 'update.title'), style: TextStyle(color: c.ink)),
-              content: SizedBox(
-                width: 320,
-                child: downloading
-                    ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(t(state.lang, 'update.downloading'), style: TextStyle(color: c.inkSoft, fontSize: 12.5)),
-                        const SizedBox(height: 10),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(value: progress > 0 ? progress : null, backgroundColor: c.fillHover, color: c.accent, minHeight: 6),
-                        ),
-                      ])
-                    : Text(
-                        state.lang == 'tr'
-                            ? 'v${info.version} yayınlandı (şu an v$kAppVersion kullanıyorsunuz). Şimdi güncellemek ister misiniz?'
-                            : 'v${info.version} is available (you have v$kAppVersion). Update now?',
-                        style: TextStyle(color: c.inkSoft, fontSize: 12.5),
-                      ),
-              ),
-              actions: downloading
-                  ? const []
-                  : [
-                      TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t(state.lang, 'action.cancel'), style: TextStyle(color: c.inkFaint))),
-                      TextButton(
-                        onPressed: () async {
-                          if (Platform.isWindows && info.windowsSetupUrl != null) {
-                            setSt(() => downloading = true);
-                            final ok = await UpdateChecker.downloadAndLaunchWindowsInstaller(
-                              info.windowsSetupUrl!,
-                              (p) => setSt(() => progress = p),
-                            );
-                            if (ok) {
-                              // Kurucu ayri surecte baslatildi - uygulamayi kapatiyoruz
-                              // ki Inno Setup "calisan uygulamayi kapatamadi" uyarisi hic
-                              // cikmasin (bkz. v2.7.1 kurulum sorunu).
-                              exit(0);
-                            } else if (ctx.mounted) {
-                              Navigator.pop(ctx);
-                            }
-                          } else {
-                            await launchUrl(Uri.parse(info.htmlUrl));
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          }
-                        },
-                        child: Text(t(state.lang, 'action.update'), style: TextStyle(color: c.accent, fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-            );
-          },
-        ),
-      ).then((_) => state.dismissUpdate());
+      final c = AppTheme(state.isDark).c;
+      showUpdateDialog(context, info, c: c, lang: state.lang)
+          .then((_) => state.dismissUpdate());
     });
   }
 

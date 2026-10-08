@@ -5,7 +5,7 @@
 ; ile PAYLOAD_DIR degiskeninde saglanir; yerel test icin varsayilan yol
 ; asagida.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.7.7"
+  #define MyAppVersion "2.7.9"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\build\windows\x64\runner\Release"
@@ -51,6 +51,17 @@ Name: "{userdesktop}\Network Console"; Filename: "{app}\network_console_app.exe"
 
 [Run]
 Filename: "{app}\network_console_app.exe"; Description: "Launch Network Console"; Flags: nowait postinstall skipifsilent
+; Uygulama icindeki guncelleyici bu kurucuyu sessiz calistirir ve kendisi
+; cikmak zorundadir (dosyalari degistirilecek), dolayisiyla uygulamayi tekrar
+; baslatacak kimse kalmaz - ustteki satir sessiz kurulumda atlanir. /RELAUNCH
+; bunu kurucuya yaptirir.
+Filename: "{app}\network_console_app.exe"; Flags: nowait; Check: RelaunchRequested
+
+[Code]
+function RelaunchRequested: Boolean;
+begin
+  Result := WizardSilent and (Pos('/RELAUNCH', UpperCase(GetCmdTail)) > 0);
+end;
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

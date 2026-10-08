@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import '../theme/app_colors.dart';
@@ -6,6 +8,12 @@ import '../theme/app_colors.dart';
 /// uygulamanin kendi renk/temasiyla cizilen ust serit. Boylece OS'un
 /// siyah/varsayilan baslik cubugu ile alttaki kendi arayuzumuz arasinda
 /// "iki ayri kutu" gorunumu olmaz, tek parca gibi durur.
+///
+/// macOS'ta pencere dugmeleri (kirmizi/sari/yesil) gizlenmez - hidden stilde
+/// bile isletim sistemi onlari seridin sol ustune cizmeye devam eder. Bu
+/// yuzden macOS'ta kendi kapat/kucult/buyut dugmelerimizi CIZMIYORUZ (yoksa
+/// Windows'taki gibi sagda ikinci bir takim olur) ve solda onlara yer
+/// birakiyoruz; v2.7.8'de trafik isiklari uygulama adinin uzerine biniyordu.
 class TitleBar extends StatelessWidget implements PreferredSizeWidget {
   final AppColors c;
   const TitleBar({super.key, required this.c});
@@ -15,15 +23,28 @@ class TitleBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMac = Platform.isMacOS;
     return Container(
       height: preferredSize.height,
       color: c.bgBase,
       child: Row(children: [
         Expanded(
-          child: DragToMoveArea(
+          child: GestureDetector(
+            // macOS'ta baslik cubuguna cift tiklamak pencereyi buyutur/eski
+            // haline getirir; native cubugu gizledigimiz icin bunu kendimiz
+            // yapiyoruz. Windows'ta da ayni davranis beklenir.
+            onDoubleTap: () async {
+              if (await windowManager.isMaximized()) {
+                await windowManager.unmaximize();
+              } else {
+                await windowManager.maximize();
+              }
+            },
+            child: DragToMoveArea(
             child: Container(
               alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.only(left: 14),
+              // Trafik isiklari icin yer; Windows'ta serit kenardan baslar.
+              padding: EdgeInsets.only(left: isMac ? 78 : 14),
               child: Row(children: [
                 Container(
                   width: 18, height: 18,
@@ -35,11 +56,14 @@ class TitleBar extends StatelessWidget implements PreferredSizeWidget {
                 Text('Network Console', style: TextStyle(color: c.inkFaint, fontSize: 11.5, fontWeight: FontWeight.w600, letterSpacing: .3)),
               ]),
             ),
+            ),
           ),
         ),
-        _CaptionButton(icon: Icons.remove, c: c, onTap: () => windowManager.minimize()),
-        _MaximizeButton(c: c),
-        _CaptionButton(icon: Icons.close, c: c, isClose: true, onTap: () => windowManager.close()),
+        if (!isMac) ...[
+          _CaptionButton(icon: Icons.remove, c: c, onTap: () => windowManager.minimize()),
+          _MaximizeButton(c: c),
+          _CaptionButton(icon: Icons.close, c: c, isClose: true, onTap: () => windowManager.close()),
+        ],
       ]),
     );
   }
