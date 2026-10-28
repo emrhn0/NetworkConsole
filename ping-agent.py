@@ -46,11 +46,13 @@ import argparse
 import base64
 import errno
 import http.client
+import hmac
 import ipaddress
 import json
 import os
 import platform
 import random
+import secrets
 import re
 import socket
 import ssl
@@ -84,7 +86,9 @@ WIN = platform.system().lower().startswith("win")
 BSD = platform.system().lower() in ("darwin", "freebsd", "openbsd", "netbsd")
 NO_WINDOW = 0x08000000 if WIN else 0
 
-SAFE_HOST = re.compile(r"^[A-Za-z0-9._:\-\[\]]{1,255}$")
+# Ilk karakter "-" olamaz: hedef, ping/traceroute komutuna argman olarak
+# gider ve "-t" gibi bir deger komutun secenegi olarak okunurdu.
+SAFE_HOST = re.compile(r"^[A-Za-z0-9._:\[\]][A-Za-z0-9._:\-\[\]]{0,254}$")
 RE_TIME = re.compile(r"([=<])\s*([\d]+(?:[.,]\d+)?)\s*m?s\b", re.I)
 RE_TTL = re.compile(r"\bTTL[=\s:]+(\d+)", re.I)
 
@@ -93,6 +97,11 @@ PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
 
 ALLOW_NETS = []          # bos = herkese acik
 TOKEN = None
+BIND = "127.0.0.1"
+# /api/health'teki surum. 6: anahtar (X-Agent-Token) zorunlu, CORS yok,
+# tarayici istekleri ve yabanci Host reddedilir. Uygulama v5 bir ajani eski
+# sayip kapatir ve yerine bunu baslatir.
+AGENT_VERSION = 6
 ACCESS_LOG = False
 ALLOW_REMOTE_PROBE = False   # kapali = /api/ping,tcp,resolve sadece 127.0.0.1'den
 GATE = threading.BoundedSemaphore(32)   # es zamanli olcum tavani
@@ -116,6 +125,11 @@ APP_DIR = None   # main() icinde ayarlanir; vt anahtar dosyasi burada aranir
 
 _dns_servers_cache = None
 _vt_key_cache = None
+
+
+def token_ok(given):
+    """Sabit sureli karsilastirma: yanit suresinden anahtar tahmin edilemesin."""
+    return bool(TOKEN) and hmac.compare_digest((given or "").encode("utf-8"), TOKEN.encode("utf-8"))
 
 
 def is_loopback(addr):
@@ -1022,11 +1036,33 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+    # CORS basligi YOK. Eskiden "Access-Control-Allow-Origin: *" ve
+    # "Allow-Private-Network: true" donuyordu: kullanicinin tarayicida actigi
+    # HERHANGI bir web sitesi 127.0.0.1'deki bu ajana istek atip yanitini
+    # okuyabiliyordu (bilgisayar adi, DNS sunuculari, ic aga ping/tcp/http
+    # istekleri, SNMP, WoL, kapatma). Uygulama tarayici degil; CORS'a hic
+    # ihtiyaci yok.
+
+    def _browser_request(self):
+        """Tarayicidan gelen istek mi? Tarayicilar capraz-site isteklere
+        Origin ve/veya Sec-Fetch-* basliklarini her zaman ekler; uygulamanin
+        HTTP istemcisi eklemez."""
+        h = self.headers
+        return bool(h.get("Origin") or h.get("Sec-Fetch-Site") or h.get("Sec-Fetch-Mode")
+                    or h.get("Sec-Fetch-Dest"))
+
+    def _host_ok(self):
+        """DNS rebinding'e karsi: loopback'e bagliyken sadece 127.0.0.1 /
+        localhost / [::1] adiyla gelen isteklere yanit ver. Saldirganin alan
+        adi 127.0.0.1'e cozulse bile Host basligi onun alan adi olur."""
+        if BIND not in ("127.0.0.1", "::1", "localhost"):
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host.startswith("["):
+            name = host.split("]")[0] + "]"
+        else:
+            name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        return name in ("127.0.0.1", "localhost", "[::1]", "::1")
 
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode("utf-8")
@@ -1034,17 +1070,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self._cors()
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
-        self.send_response(204)
-        self._cors()
-        self.end_headers()
+        # CORS on-ucusuna izin verilmez: tarayicidan cagrilamaz.
+        return self._json({"ok": False, "error": "forbidden"}, 403)
 
     def do_GET(self):
         peer = self.client_address[0]
+        if self._browser_request() or not self._host_ok():
+            log("RED", peer, "tarayici/yabanci Host")
+            return self._json({"ok": False, "error": "forbidden"}, 403)
         if not source_allowed(peer):
             log("RED", peer, "izinli ag disi")
             return self._json({"ok": False, "error": "bu agdan erisim yok"}, 403)
@@ -1062,10 +1100,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 return default
 
-        if TOKEN and path.startswith("/api/"):
-            given = arg("k") or self.headers.get("X-Agent-Token", "")
-            if given != TOKEN:
-                return self._json({"ok": False, "error": "anahtar gecersiz"}, 401)
+        authed = token_ok(self.headers.get("X-Agent-Token", "") or arg("k"))
+        if path == "/api/health" and not authed:
+            # Uygulama eski/yeni ajani ayirt edebilsin diye kimliksiz de yanit
+            # verir - ama makine adi, isletim sistemi, DNS sunuculari yok.
+            return self._json({"agent": "ping-konsolu", "version": AGENT_VERSION, "auth": False})
+        if TOKEN and path.startswith("/api/") and not authed:
+            return self._json({"ok": False, "error": "anahtar gecersiz"}, 401)
 
         if path in PROBE_PATHS and not ALLOW_REMOTE_PROBE and not is_loopback(peer):
             log("RED", peer, path, "uzak olcum kapali")
@@ -1076,7 +1117,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             return self._json({
-                "agent": "ping-konsolu", "version": 5,
+                "agent": "ping-konsolu", "version": AGENT_VERSION, "auth": True,
                 "app_version": APP_VERSION,
                 "host": socket.gethostname(),
                 "os": platform.system() + " " + platform.release(),
@@ -1284,7 +1325,7 @@ def run_with_tray(srv, port, app_dir):
 
 
 def main():
-    global ALLOW_NETS, TOKEN, ACCESS_LOG, ALLOW_REMOTE_PROBE, APP_DIR
+    global ALLOW_NETS, TOKEN, ACCESS_LOG, ALLOW_REMOTE_PROBE, APP_DIR, BIND
 
     # Pencere gostermeyen (--windowed) derlenmis exe'de sys.stdout/stderr None
     # olur; print() bu durumda cokerdi. Yerine bir log dosyasina yaz.
@@ -1313,13 +1354,19 @@ def main():
     ap.add_argument("--no-tray", action="store_true", help="gorev cubugu simgesini gosterme")
     a = ap.parse_args()
 
-    TOKEN = a.token
+    # Uygulama anahtari ortam degiskeniyle verir (komut satirinda gorunmesin).
+    TOKEN = (a.token or os.environ.get("NC_AGENT_TOKEN") or "").strip() or None
     ACCESS_LOG = a.access_log
     if a.vt_key:
         global _vt_key_cache
         _vt_key_cache = a.vt_key.strip()
     ALLOW_REMOTE_PROBE = a.allow_remote_probe
     bind = a.bind or ("0.0.0.0" if a.lan else "127.0.0.1")
+    BIND = bind
+    if bind not in ("127.0.0.1", "::1", "localhost") and not TOKEN:
+        # Aga acik bir ajan anahtarsiz calismaz: ag icindeki herkes bu
+        # makineden olcum yaptirabilirdi.
+        TOKEN = secrets.token_urlsafe(24)
 
     nets = a.allow.split(",") if a.allow else (PRIVATE if bind != "127.0.0.1" else [])
     for n in nets:

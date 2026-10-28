@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -20,9 +21,42 @@ class Agent {
   // eden ESKI bir ajan sureci varsa (upgrade sirasinda kapanmadiysa), UI
   // onu direkt yeniden kullanmak yerine kapatip taze bir surec baslatir -
   // yoksa yeni eklenen uc noktalar (orn. /api/ssh) "not found" doner.
-  static const int kMinAgentVersion = 5;
+  //
+  // 6: ajan her /api/* isteginde X-Agent-Token ister, CORS donmez ve
+  // tarayicidan gelen istekleri reddeder. 5 ve oncesi anahtarsizdi: kullanicinin
+  // tarayicida actigi herhangi bir site ajani kullanabiliyordu.
+  static const int kMinAgentVersion = 6;
   int? port;
   Map<String, dynamic>? lastHealth;
+
+  String? _tokenValue;
+
+  /// Bu kullaniciya ozel, rastgele ajan anahtari. Kullanici profilindeki bir
+  /// dosyada durur ki uygulama yeniden acildiginda arka planda calismaya
+  /// devam eden ajanla konusabilsin. Ajan anahtari ortam degiskeninden alir.
+  Future<String> _token() async {
+    final cached = _tokenValue;
+    if (cached != null) return cached;
+    File? file;
+    try {
+      final dir = await getApplicationSupportDirectory();
+      file = File('${dir.path}${Platform.pathSeparator}agent-token');
+      if (file.existsSync()) {
+        final t = file.readAsStringSync().trim();
+        if (t.length >= 32) return _tokenValue = t;
+      }
+    } catch (_) {}
+    final rnd = Random.secure();
+    final t = base64Url.encode(List<int>.generate(32, (_) => rnd.nextInt(256))).replaceAll('=', '');
+    try {
+      file?.parent.createSync(recursive: true);
+      file?.writeAsStringSync(t);
+    } catch (_) {}
+    return _tokenValue = t;
+  }
+
+  Future<Map<String, String>> _headers([Map<String, String>? extra]) async =>
+      {'X-Agent-Token': await _token(), ...?extra};
 
   String get base => 'http://127.0.0.1:${port ?? portRange.first}';
 
@@ -42,7 +76,7 @@ class Agent {
   Future<bool> _probe(int p, {int timeoutMs = 600}) async {
     try {
       final r = await http
-          .get(Uri.parse('http://127.0.0.1:$p/api/health'))
+          .get(Uri.parse('http://127.0.0.1:$p/api/health'), headers: await _headers())
           .timeout(Duration(milliseconds: timeoutMs));
       if (r.statusCode != 200) return false;
       final j = jsonDecode(r.body);
@@ -96,7 +130,9 @@ class Agent {
     for (final p in candidates) {
       if (!await _probe(p)) continue;
       final v = (lastHealth?['version'] as num?)?.toInt() ?? 0;
-      if (v >= kMinAgentVersion) return p;
+      // Yeni surum ama bizim anahtarimizi tanimiyorsa (baska bir anahtarla
+      // baslatilmis) kullanilamaz; eski sayilir.
+      if (v >= kMinAgentVersion && lastHealth?['auth'] == true) return p;
       stale.add(p);
     }
     return null;
@@ -137,7 +173,7 @@ class Agent {
     for (final p in stale) {
       try {
         await http
-            .get(Uri.parse('http://127.0.0.1:$p/api/shutdown'))
+            .get(Uri.parse('http://127.0.0.1:$p/api/shutdown'), headers: await _headers())
             .timeout(const Duration(seconds: 2));
       } catch (_) {}
     }
@@ -154,14 +190,16 @@ class Agent {
     await _savePort(p);
 
     final bin = _agentBinary();
+    // Anahtar komut satirinda degil ortam degiskeninde: surec listesinde gorunmez.
+    final env = {'NC_AGENT_TOKEN': await _token()};
     try {
       if (bin != null) {
-        await Process.start(bin, ['--port', '$p'], mode: ProcessStartMode.detached);
+        await Process.start(bin, ['--port', '$p'], mode: ProcessStartMode.detached, environment: env);
       } else {
         // Kaynaktan calisirken: repo kokundeki ping-agent.py'yi python ile baslat.
         final script = '${_here.parent.path}${Platform.pathSeparator}ping-agent.py';
         await Process.start('python', [script, '--port', '$p', '--no-tray'],
-            mode: ProcessStartMode.detached);
+            mode: ProcessStartMode.detached, environment: env);
       }
     } catch (_) {
       return false;
@@ -194,7 +232,7 @@ class Agent {
       // "agent unreachable" yaniligina yol aciyordu, halbuki ajan hala
       // calisiyordu, sadece uzun suruyordu.
       final effective = timeout ?? (path == '/api/traceroute' ? const Duration(seconds: 100) : const Duration(seconds: 25));
-      final r = await http.get(uri).timeout(effective);
+      final r = await http.get(uri, headers: await _headers()).timeout(effective);
       return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (e) {
       if (_retry) {
@@ -209,7 +247,7 @@ class Agent {
     try {
       final uri = Uri.parse('$base/api/vtcheck').replace(queryParameters: {'url': url});
       final r = await http
-          .get(uri, headers: vtKey.isNotEmpty ? {'X-VT-Key': vtKey} : {})
+          .get(uri, headers: await _headers(vtKey.isNotEmpty ? {'X-VT-Key': vtKey} : null))
           .timeout(const Duration(seconds: 25));
       return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (e) {
