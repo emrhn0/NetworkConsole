@@ -167,7 +167,7 @@ class _UrlCheckScreenState extends State<UrlCheckScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final c = AppTheme(state.isDark).c;
+    final c = AppTheme(state.themeId).c;
     final hasKey = state.vtKey.isNotEmpty;
 
     return SingleChildScrollView(

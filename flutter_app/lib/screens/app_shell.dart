@@ -49,7 +49,7 @@ class _AppShellState extends State<AppShell> {
     final info = state.updateAvailable!;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final c = AppTheme(state.isDark).c;
+      final c = AppTheme(state.themeId).c;
       showUpdateDialog(context, info, c: c, lang: state.lang)
           .then((_) => state.dismissUpdate());
     });
@@ -80,7 +80,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final theme = AppTheme(state.isDark);
+    final theme = AppTheme(state.themeId);
     final c = theme.c;
     _maybeShowUpdateDialog(state);
 

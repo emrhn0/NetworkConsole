@@ -45,7 +45,7 @@ class _SnmpScreenState extends State<SnmpScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final c = AppTheme(state.isDark).c;
+    final c = AppTheme(state.themeId).c;
     final r = _r;
     final ok = r != null && r['ok'] == true;
     return SingleChildScrollView(

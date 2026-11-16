@@ -54,7 +54,7 @@ class _TelnetScreenState extends State<TelnetScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final c = AppTheme(state.isDark).c;
+    final c = AppTheme(state.themeId).c;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(26),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

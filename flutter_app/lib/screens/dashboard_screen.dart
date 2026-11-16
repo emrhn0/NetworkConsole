@@ -14,7 +14,7 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final theme = AppTheme(state.isDark);
+    final theme = AppTheme(state.themeId);
     final c = theme.c;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(30),

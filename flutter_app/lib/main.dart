@@ -47,7 +47,7 @@ class _NetworkConsoleAppState extends State<NetworkConsoleApp> {
       value: _state,
       child: Consumer<AppState>(
         builder: (context, state, _) {
-          final theme = AppTheme(state.isDark);
+          final theme = AppTheme(state.themeId);
           return MaterialApp(
             title: 'Network Console',
             debugShowCheckedModeBanner: false,

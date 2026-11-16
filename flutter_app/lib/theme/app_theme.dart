@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
+import 'theme_presets.dart';
 
 class AppTheme {
   final bool isDark;
   final AppColors c;
-  AppTheme(this.isDark) : c = isDark ? AppColors.dark : AppColors.light;
+  AppTheme.preset(ThemePreset p) : isDark = p.dark, c = AppColors.forPreset(p);
+  AppTheme(String? themeId) : this.preset(themeById(themeId));
 
   TextStyle get display => GoogleFonts.fraunces(color: c.ink, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500);
   TextStyle get label => GoogleFonts.inter(color: c.ink);

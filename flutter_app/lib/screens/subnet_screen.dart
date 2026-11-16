@@ -53,7 +53,7 @@ class _SubnetScreenState extends State<SubnetScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final c = AppTheme(state.isDark).c;
+    final c = AppTheme(state.themeId).c;
     final info = _info;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(26),

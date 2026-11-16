@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../theme/theme_presets.dart';
 import 'agent.dart';
 import 'constants.dart';
 import 'update_checker.dart';
@@ -14,7 +15,10 @@ class AppState extends ChangeNotifier {
   final Agent agent = Agent();
   SharedPreferences? _prefs;
 
-  bool isDark = false;
+  /// Secili tema (theme_presets.dart'taki id). Eski surumler sadece
+  /// koyu/acik tutuyordu ('nc-dark' bool) - ilk acilista oradan tasinir.
+  String themeId = kNcLightId;
+  bool get isDark => themeById(themeId).dark;
   String lang = 'en'; // 'en' | 'tr'
   String vtKey = '';
   bool agentConnected = false;
@@ -33,7 +37,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    isDark = _prefs?.getBool('nc-dark') ?? false;
+    final savedTheme = _prefs?.getString('nc-theme');
+    themeId = (savedTheme != null && builtInThemes.any((t) => t.id == savedTheme))
+        ? savedTheme
+        : ((_prefs?.getBool('nc-dark') ?? false) ? kNcDarkId : kNcLightId);
     lang = _prefs?.getString('nc-lang') ?? 'en';
     vtKey = _prefs?.getString('nc-vt-key') ?? '';
     notifyListeners();
@@ -57,9 +64,11 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  void toggleDark(bool v) {
-    isDark = v;
-    _prefs?.setBool('nc-dark', v);
+  void setTheme(String id) {
+    themeId = themeById(id).id;
+    _prefs?.setString('nc-theme', themeId);
+    // Eski surume geri donulurse en azindan koyu/acik tercihi korunsun.
+    _prefs?.setBool('nc-dark', isDark);
     notifyListeners();
   }
 

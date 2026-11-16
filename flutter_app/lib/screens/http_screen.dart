@@ -41,7 +41,7 @@ class _HttpScreenState extends State<HttpScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final c = AppTheme(state.isDark).c;
+    final c = AppTheme(state.themeId).c;
     final r = _r;
     final chain = (r?['chain'] as List?) ?? [];
     return SingleChildScrollView(

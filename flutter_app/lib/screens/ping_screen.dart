@@ -215,7 +215,7 @@ class _PingScreenState extends State<PingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final theme = AppTheme(state.isDark);
+    final theme = AppTheme(state.themeId);
     final c = theme.c;
     final started = _targets.where((t) => t.active || t.sent > 0).toList();
     final failedCount = started.where((t) => t.lastOk == false).length;

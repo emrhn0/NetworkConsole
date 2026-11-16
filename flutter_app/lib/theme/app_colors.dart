@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme_presets.dart';
 
 /// Renk paleti - ag-konsolu.html'deki CSS degiskenlerinin birebir karsiligi.
 class AppColors {
@@ -33,6 +34,42 @@ class AppColors {
     warn: Color(0xFFC79430), warnWeak: Color(0x21C79430), warnLine: Color(0x4DC79430),
     fillFaint: Color(0x06EFE8D8), fillHover: Color(0x0FEFE8D8), fillActive: Color(0x17EFE8D8),
   );
+
+  /// Bir tema presetinden tam palet. Network Console'un kendi iki temasi elle
+  /// ayarlanmis sabitleri kullanir; katalogdakiler (CommandS'tekiyle ayni)
+  /// yedi arayuz renginden ve uc durum renginden turetilir.
+  static AppColors forPreset(ThemePreset p) {
+    if (p.id == kNcDarkId) return dark;
+    if (p.id == kNcLightId) return light;
+    final d = p.dark;
+    Color a(Color c, double o) => c.withValues(alpha: o);
+    final ink = p.text;
+    final lum = p.accent.computeLuminance();
+    return AppColors(
+      bgDeep: p.background,
+      bgBase: p.panel,
+      bgRise: p.panelAlt,
+      bgHigh: Color.lerp(p.panelAlt, p.border, .5)!,
+      bgSink: d ? const Color(0x47000000) : a(ink, .045),
+      ink: ink,
+      inkSoft: Color.lerp(ink, p.textDim, .45)!,
+      inkFaint: p.textDim,
+      inkGhost: Color.lerp(p.textDim, p.background, .38)!,
+      line: d ? a(ink, .09) : a(ink, .12),
+      lineSoft: d ? a(ink, .05) : a(ink, .07),
+      lineStrong: d ? a(ink, .17) : a(ink, .22),
+      accent: p.accent,
+      accentInk: lum > .4 ? const Color(0xFF0A0A0F) : const Color(0xFFFFFDF6),
+      accentWeak: a(p.accent, d ? .13 : .11),
+      accentLine: a(p.accent, .32),
+      ok: p.ok, okWeak: a(p.ok, d ? .13 : .11), okLine: a(p.ok, .30),
+      alarm: p.alarm, alarmWeak: a(p.alarm, d ? .13 : .10), alarmLine: a(p.alarm, .30),
+      warn: p.warn, warnWeak: a(p.warn, d ? .13 : .11), warnLine: a(p.warn, .30),
+      fillFaint: a(ink, d ? .024 : .02),
+      fillHover: a(ink, d ? .06 : .055),
+      fillActive: a(ink, d ? .09 : .085),
+    );
+  }
 
   static const light = AppColors(
     bgDeep: Color(0xFFE6E2D6), bgBase: Color(0xFFF3F0E6), bgRise: Color(0xFFFAF8F1), bgHigh: Color(0xFFEEEADE),
