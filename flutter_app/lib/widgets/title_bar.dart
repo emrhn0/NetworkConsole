@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'app_logo.dart';
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -46,12 +47,7 @@ class TitleBar extends StatelessWidget implements PreferredSizeWidget {
               // Trafik isiklari icin yer; Windows'ta serit kenardan baslar.
               padding: EdgeInsets.only(left: isMac ? 78 : 14),
               child: Row(children: [
-                Container(
-                  width: 18, height: 18,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(4)),
-                  child: Icon(Icons.terminal, size: 11, color: c.accentInk),
-                ),
+                const AppLogo(size: 18),
                 const SizedBox(width: 9),
                 Text('Network Console', style: TextStyle(color: c.inkFaint, fontSize: 11.5, fontWeight: FontWeight.w600, letterSpacing: .3)),
               ]),

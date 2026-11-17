@@ -22,6 +22,7 @@ import 'urlcheck_screen.dart';
 import 'snmp_screen.dart';
 import 'wol_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/app_logo.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -100,11 +101,7 @@ class _AppShellState extends State<AppShell> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
               c: c,
               child: Row(children: [
-                Container(
-                  width: 34, height: 34,
-                  decoration: BoxDecoration(color: c.accent, borderRadius: BorderRadius.circular(8)),
-                  child: Icon(Icons.terminal, color: c.accentInk, size: 18),
-                ),
+                const AppLogo(size: 34),
                 const SizedBox(width: 10),
                 Expanded(child: Text('Network Console', style: theme.display.copyWith(fontSize: 15), overflow: TextOverflow.ellipsis)),
               ]),
