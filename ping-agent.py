@@ -101,7 +101,7 @@ BIND = "127.0.0.1"
 # /api/health'teki surum. 6: anahtar (X-Agent-Token) zorunlu, CORS yok,
 # tarayici istekleri ve yabanci Host reddedilir. Uygulama v5 bir ajani eski
 # sayip kapatir ve yerine bunu baslatir.
-AGENT_VERSION = 6
+AGENT_VERSION = 7
 ACCESS_LOG = False
 ALLOW_REMOTE_PROBE = False   # kapali = /api/ping,tcp,resolve sadece 127.0.0.1'den
 GATE = threading.BoundedSemaphore(32)   # es zamanli olcum tavani
@@ -749,15 +749,25 @@ def _vt_request(path, key, method="GET", data=None, timeout=10):
     # bazi yerel guvenlik yazilimlari (AV/proxy) HTTPS trafigini MITM ile inceler ve
     # eksik/gecersiz sertifika sunar (ornek: "Missing Authority Key Identifier").
     # bu durumda dogrulamasiz baglantiya dus - anahtar zaten o cihazdan geciyor.
+    # Sertifika dogrulanamazsa anahtar GONDERILMEZ: dogrulamasiz baglanti,
+    # aradaki herhangi birine VT anahtarini ve kontrol edilen URL'yi verir.
+    # AV/proxy incelemesi icin sistemin guvendigi kok sertifikalar da yuklenir.
+    ctx = ssl.create_default_context()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (ssl.SSLCertVerificationError, ssl.SSLError, urllib.error.URLError) as e:
-        reason = getattr(e, "reason", e)
-        if not isinstance(reason, (ssl.SSLCertVerificationError, ssl.SSLError)):
-            raise
-        with urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context()) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        ctx.load_default_certs()
+        if sys.platform == "win32":
+            for store in ("ROOT", "CA"):
+                for cert, enc, trust in ssl.enum_certificates(store):
+                    if enc == "x509_asn":
+                        try:
+                            ctx.load_verify_locations(cadata=cert)
+                        except ssl.SSLError:
+                            pass
+        ctx.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
+    except Exception:
+        pass
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def run_vtcheck(url, client_key=None):
@@ -1104,7 +1114,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health" and not authed:
             # Uygulama eski/yeni ajani ayirt edebilsin diye kimliksiz de yanit
             # verir - ama makine adi, isletim sistemi, DNS sunuculari yok.
-            return self._json({"agent": "ping-konsolu", "version": AGENT_VERSION, "auth": False})
+            # nonce gelirse anahtari bildigimizi anahtari gondermeden kanitla:
+            # uygulama anahtari ancak bu kanittan sonra gonderir (ayni portu
+            # baska bir kullanici acmis olabilir).
+            body = {"agent": "ping-konsolu", "version": AGENT_VERSION, "auth": False}
+            nonce = arg("nonce")
+            if TOKEN and re.fullmatch(r"[0-9a-f]{16,128}", nonce or ""):
+                msg = ("%s:%d" % (nonce, self.server.server_address[1])).encode("ascii")
+                body["proof"] = hmac.new(TOKEN.encode("utf-8"), msg, "sha256").hexdigest()
+            return self._json(body)
         if TOKEN and path.startswith("/api/") and not authed:
             return self._json({"ok": False, "error": "anahtar gecersiz"}, 401)
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -25,7 +26,7 @@ class Agent {
   // 6: ajan her /api/* isteginde X-Agent-Token ister, CORS donmez ve
   // tarayicidan gelen istekleri reddeder. 5 ve oncesi anahtarsizdi: kullanicinin
   // tarayicida actigi herhangi bir site ajani kullanabiliyordu.
-  static const int kMinAgentVersion = 6;
+  static const int kMinAgentVersion = 7;
   int? port;
   Map<String, dynamic>? lastHealth;
 
@@ -73,21 +74,49 @@ class Agent {
     }
   }
 
+  /// Asks whoever listens on [p] to prove it holds this user's agent key,
+  /// without sending the key: the agent answers a fresh random challenge with
+  /// HMAC-SHA256(key, "challenge:port"). Only a listener that proves it gets
+  /// the key, the VirusTotal key and the targets. Another user of this
+  /// computer can open these ports too, so a listener that merely claims to
+  /// be the agent is not enough.
   Future<bool> _probe(int p, {int timeoutMs = 600}) async {
+    lastHealth = null;
     try {
+      final rnd = Random.secure();
+      final nonce = List.generate(16, (_) => rnd.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
       final r = await http
-          .get(Uri.parse('http://127.0.0.1:$p/api/health'), headers: await _headers())
+          .get(Uri.parse('http://127.0.0.1:$p/api/health?nonce=$nonce'))
           .timeout(Duration(milliseconds: timeoutMs));
       if (r.statusCode != 200) return false;
       final j = jsonDecode(r.body);
-      if (j['agent'] == 'ping-konsolu') {
-        lastHealth = j;
+      if (j is! Map || j['agent'] != 'ping-konsolu') return false;
+      final expected = Hmac(sha256, utf8.encode(await _token()))
+          .convert(utf8.encode('$nonce:$p'))
+          .toString();
+      if (!_sameText('${j['proof'] ?? ''}', expected)) {
+        // An older agent, or not ours: never shown the key.
+        lastHealth = {...j, 'auth': false};
         return true;
       }
-      return false;
+      final full = await http
+          .get(Uri.parse('http://127.0.0.1:$p/api/health'), headers: await _headers())
+          .timeout(Duration(milliseconds: timeoutMs));
+      final fj = full.statusCode == 200 ? jsonDecode(full.body) : null;
+      lastHealth = fj is Map<String, dynamic> ? fj : {...j, 'auth': true};
+      return true;
     } catch (_) {
       return false;
     }
+  }
+
+  static bool _sameText(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
   }
 
   Future<bool> _portFree(int p) async {
@@ -170,20 +199,9 @@ class Agent {
     // devam eder; ayrica surec yonetici haklariyla baslatilmis olabilir, o
     // zaman disaridan oldurmek de mumkun degil. Bu yuzden kapanmayan portu
     // ZORLAMIYORUZ, asagida baska bos bir port seciyoruz.
-    for (final p in stale) {
-      try {
-        await http
-            .get(Uri.parse('http://127.0.0.1:$p/api/shutdown'), headers: await _headers())
-            .timeout(const Duration(seconds: 2));
-      } catch (_) {}
-    }
-    if (stale.isNotEmpty) {
-      final freedDeadline = DateTime.now().add(const Duration(seconds: 4));
-      while (DateTime.now().isBefore(freedDeadline)) {
-        if (await _portFree(stale.first)) break;
-        await Future.delayed(const Duration(milliseconds: 200));
-      }
-    }
+    // The key is never sent to a listener that has not proved it holds it,
+    // so a stale or unknown listener is not asked to shut down: its port is
+    // simply skipped below.
 
     final p = await _freePort();
     port = p;
@@ -206,7 +224,7 @@ class Agent {
     }
     final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (DateTime.now().isBefore(deadline)) {
-      if (await _probe(p, timeoutMs: 1000)) return true;
+      if (await _probe(p, timeoutMs: 1000) && lastHealth?['auth'] == true) return true;
       await Future.delayed(const Duration(milliseconds: 250));
     }
     return false;

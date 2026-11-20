@@ -5,7 +5,7 @@
 ; ile PAYLOAD_DIR degiskeninde saglanir; yerel test icin varsayilan yol
 ; asagida.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.8.1"
+  #define MyAppVersion "2.8.2"
 #endif
 #ifndef PayloadDir
   #define PayloadDir "..\build\windows\x64\runner\Release"
@@ -37,6 +37,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; %APPDATA% altinda, {app} klasorunun DISINDA saklanir; asagidaki temizlik
 ; sadece eski surumun program dosyalarini siler, ayarlara dokunmaz.
 [InstallDelete]
+; The 1.5.x agent started from the Startup folder at every logon and answered
+; any web site (CORS *). StopRunningCopies stops it; removing its shortcut
+; keeps it from starting again.
+Type: files; Name: "{userstartup}\NetworkConsole-Agent.lnk"
 Type: filesandordirs; Name: "{app}\data"
 Type: files; Name: "{app}\*.dll"
 Type: files; Name: "{app}\*.exe"
